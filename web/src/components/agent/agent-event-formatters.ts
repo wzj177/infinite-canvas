@@ -415,7 +415,6 @@ export function routeName(path: string) {
     if (path.startsWith("/canvas/")) return tr("routes.canvasProject");
     if (path.startsWith("/image")) return tr("routes.image");
     if (path.startsWith("/video")) return tr("routes.video");
-    if (path.startsWith("/prompts")) return tr("routes.prompts");
     if (path.startsWith("/assets")) return tr("routes.assets");
     if (path.startsWith("/config")) return tr("routes.config");
     return path;

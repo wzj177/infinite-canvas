@@ -9,6 +9,19 @@ import { ModelSelectModal } from "./model-select-modal";
 
 type ScriptTarget = { name: string; capability: ModelCapability; value: string };
 
+/** The MC / Seedance video JSON protocols only exist on the napi.wanzij.cn gateway, so only offer them there. */
+function isNapiVideoBaseUrl(baseUrl: string) {
+    try {
+        return new URL(baseUrl.trim()).hostname === "napi.wanzij.cn";
+    } catch {
+        return false;
+    }
+}
+
+function isNapiVideoChannel(channel: ModelChannel) {
+    return channel.apiFormat === "video-mc" || channel.apiFormat === "video-seedance";
+}
+
 export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: boolean; channel: ModelChannel | null; onSave: (channel: ModelChannel) => void; onClose: () => void }) {
     const { t } = useTranslation();
     const [draft, setDraft] = useState<ModelChannel | null>(channel);
@@ -17,6 +30,12 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
     const apiFormatOptions: Array<{ label: string; value: ApiCallFormat }> = [
         { label: "OpenAI", value: "openai" },
         { label: "Gemini", value: "gemini" },
+        ...(draft && isNapiVideoBaseUrl(draft.baseUrl)
+            ? [
+                  { label: "视频 · MC", value: "video-mc" as ApiCallFormat },
+                  { label: "视频 · Seedance", value: "video-seedance" as ApiCallFormat },
+              ]
+            : []),
     ];
     const capabilityOptions: Array<{ label: string; value: ModelCapability }> = ["image", "video", "text", "audio"].map((value) => ({ label: t(`config.channelEditor.capabilities.${value}`), value: value as ModelCapability }));
 
@@ -75,7 +94,15 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
                 </label>
                 <label className="block md:col-span-2">
                     <span className="mb-1 block text-sm font-medium">{t("config.channelEditor.baseUrl")}</span>
-                    <Input value={draft.baseUrl} onChange={(event) => patch({ baseUrl: event.target.value })} placeholder="https://api.example.com" />
+                    <Input
+                        value={draft.baseUrl}
+                        onChange={(event) => {
+                            const baseUrl = event.target.value;
+                            // The video JSON protocols are napi-only; leaving the gateway falls back to OpenAI.
+                            patch({ baseUrl, ...(isNapiVideoChannel(draft) && !isNapiVideoBaseUrl(baseUrl) ? { apiFormat: "openai" as ApiCallFormat } : {}) });
+                        }}
+                        placeholder="https://api.example.com"
+                    />
                 </label>
                 <label className="block md:col-span-2">
                     <span className="mb-1 block text-sm font-medium">API Key</span>

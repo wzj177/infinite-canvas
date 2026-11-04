@@ -16,6 +16,7 @@ const resolutionOptions = [
 const videoModeOptions = [
     { value: "frames", labelKey: "frames" },
     { value: "reference", labelKey: "reference" },
+    { value: "edit", labelKey: "edit" },
 ];
 
 export const videoResolutionOptions = resolutionOptions.map((item) => ({ value: item.value, label: item.label }));
@@ -92,7 +93,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                     </div>
                 </SettingGroup>
                 <SettingGroup title={t("settingsPanels.video.mode")} color={theme.node.muted}>
-                    <div className="grid grid-cols-2 gap-2.5">
+                    <div className="grid grid-cols-3 gap-2.5">
                         {videoModeOptions.map((item) => (
                             <OptionPill key={item.value} selected={videoMode === item.value} theme={theme} onClick={() => onConfigChange("videoMode", item.value)}>
                                 {t(`settingsPanels.video.modes.${item.labelKey}`)}
@@ -124,7 +125,7 @@ export function videoModeLabel(value: string) {
 }
 
 export function normalizeVideoModeValue(value: string | undefined) {
-    return value === "reference" ? "reference" : "frames";
+    return value === "reference" || value === "edit" ? value : "frames";
 }
 
 export function normalizeVideoSizeValue(value: string, resolution = "720") {

@@ -20,6 +20,10 @@ const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiE
 
 export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string };
 export type VideoGenerationTask = { id: string; provider: "openai" | "gemini" | "plugin"; model: string };
+
+/** Async video tasks are slow; poll every 20s and give up after ~30 minutes. */
+export const VIDEO_POLL_INTERVAL_MS = 20000;
+export const VIDEO_POLL_MAX_ATTEMPTS = 90;
 type GeminiInlineData = { bytesBase64Encoded: string; mimeType: string };
 type GeminiVideoOperation = {
     name?: string;
@@ -48,13 +52,13 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
 }
 
 export async function waitForVideoGenerationTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationResult> {
-    for (let attempt = 0; attempt < 120; attempt += 1) {
+    for (let attempt = 0; attempt < VIDEO_POLL_MAX_ATTEMPTS; attempt += 1) {
         if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
         const state = await pollVideoGenerationTask(config, task, options);
         if (state.status === "completed") return state.result;
         if (state.status === "failed") throw videoTaskFailed(state.error);
-        if (attempt === 119) throw new Error(apiText("videoTimeout", { provider: "" }));
-        await delay(2500, options?.signal);
+        if (attempt === VIDEO_POLL_MAX_ATTEMPTS - 1) throw new Error(apiText("videoTimeout", { provider: "" }));
+        await delay(VIDEO_POLL_INTERVAL_MS, options?.signal);
     }
     throw new Error(apiText("videoTimeout", { provider: "" }));
 }
@@ -75,6 +79,7 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
     const script = resolveModelScript(config, selectedModel);
     if (script) return createPluginVideoTask(requestConfig, selectedModel, script, prompt, references, options);
     assertVideoConfig(requestConfig, requestConfig.model);
+    if (isJsonVideoFormat(requestConfig.apiFormat)) return createJsonVideoTask(requestConfig, selectedModel, prompt, references, options);
     if (requestConfig.apiFormat === "gemini") return createGeminiVideoTask(requestConfig, selectedModel, prompt, references, options);
     return createOpenAIVideoTask(requestConfig, selectedModel, prompt, references, options);
 }
@@ -183,6 +188,53 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
     audios.forEach((file) => body.append("audio[]", file));
     try {
         const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>(aiApiUrl(config, "/videos"), body, { headers: aiHeaders(config), signal: options?.signal })).data);
+        if (!created.id) throw new Error(apiText("noVideoTaskId"));
+        return { id: created.id, provider: "openai", model };
+    } catch (error) {
+        throw new Error(readAxiosError(error, apiText("videoTaskCreateFailed")));
+    }
+}
+
+/** Field names of the two napi JSON video protocols (MC vs Seedance), mapped from one shared parameter shape. */
+const JSON_VIDEO_FIELD_MAP: Record<"video-mc" | "video-seedance", { duration: string; resolution: string; ratio: string; images: string; videos: string; audios: string; firstFrame?: string; lastFrame?: string }> = {
+    "video-mc": { duration: "duration", resolution: "resolution", ratio: "ratio", images: "images", videos: "videos", audios: "audios", firstFrame: "first_frame_image", lastFrame: "last_frame_image" },
+    "video-seedance": { duration: "seconds", resolution: "resolution", ratio: "aspect_ratio", images: "image_refs", videos: "video_refs", audios: "audio_refs" },
+};
+
+function isJsonVideoFormat(apiFormat: AiConfig["apiFormat"]) {
+    return apiFormat === "video-mc" || apiFormat === "video-seedance";
+}
+
+function jsonReferenceUrl(url: string | undefined) {
+    if (isPublicMediaUrl(url || "")) return url as string;
+    throw new Error(apiText("jsonChannelUrlOnly"));
+}
+
+async function createJsonVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: VideoMediaOptions): Promise<VideoGenerationTask> {
+    const fields = JSON_VIDEO_FIELD_MAP[config.apiFormat as "video-mc" | "video-seedance"];
+    const images = references.map((image) => jsonReferenceUrl(image.url));
+    const videos = (options?.videos || []).map((video) => jsonReferenceUrl(video.url));
+    const audios = (options?.audios || []).map((audio) => jsonReferenceUrl(audio.url));
+    // The Seedance edit purpose reuses the source video's length/ratio, so those fields are omitted.
+    const editing = config.apiFormat === "video-seedance" && config.videoMode === "edit" && videos.length > 0;
+    const referenceStyle = config.videoMode === "reference" || config.videoMode === "edit" || images.length > 2;
+    const ratio = inferVideoRatio(config.size || "16:9");
+    const seconds = String(config.videoSeconds || "").trim() === "-1" ? "" : normalizeVideoSeconds(config.videoSeconds);
+    const body: Record<string, unknown> = { model: modelOptionName(model), prompt };
+    body[fields.resolution] = normalizeVideoResolution(config.vquality);
+    if (!editing && ratio && ratio !== "auto") body[fields.ratio] = ratio;
+    if (!editing && seconds) body[fields.duration] = config.apiFormat === "video-mc" ? Number(seconds) : seconds;
+    if (config.apiFormat === "video-seedance" && videos.length) body.omni_reference_task_type = editing ? "edit" : "reference";
+    if (config.apiFormat === "video-mc" && !referenceStyle && !videos.length) {
+        if (images[0]) body[fields.firstFrame!] = images[0];
+        if (images[1]) body[fields.lastFrame!] = images[1];
+    } else if (images.length) {
+        body[fields.images] = images;
+    }
+    if (videos.length) body[fields.videos] = videos;
+    if (audios.length) body[fields.audios] = audios;
+    try {
+        const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>(aiApiUrl(config, "/videos"), body, { headers: aiHeaders(config, "application/json"), signal: options?.signal })).data);
         if (!created.id) throw new Error(apiText("noVideoTaskId"));
         return { id: created.id, provider: "openai", model };
     } catch (error) {
