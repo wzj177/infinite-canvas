@@ -1,9 +1,12 @@
 # 构建 Vite 前端产物。
 FROM oven/bun:1.3.13 AS web-build
 
+# 可选的 bun install 附加参数，例如国内服务器走镜像源：
+# docker build --build-arg BUN_INSTALL_ARGS="--registry https://registry.npmmirror.com" .
+ARG BUN_INSTALL_ARGS=""
 WORKDIR /app/web
 COPY web/package.json web/bun.lock ./
-RUN --mount=type=cache,target=/root/.bun/install/cache bun install --cache-dir=/root/.bun/install/cache
+RUN --mount=type=cache,target=/root/.bun/install/cache bun install --cache-dir=/root/.bun/install/cache $BUN_INSTALL_ARGS
 COPY VERSION /app/VERSION
 COPY CHANGELOG.md /app/CHANGELOG.md
 COPY web ./
