@@ -342,6 +342,7 @@ export default {
         loginSuccess: "登录成功",
         loginFailed: "登录失败",
         formIncomplete: "请输入用户名和密码",
+        turnstileRequired: "请先完成人机验证",
         authorizedUser: "已授权用户",
     },
     topNav: {

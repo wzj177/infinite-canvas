@@ -65,12 +65,21 @@ export function refreshLoginSession() {
     return refreshPromise;
 }
 
-export async function loginWithPassword(username: string, password: string) {
-    const response = await gatewayFetch("/api/user/login", { method: "POST", body: JSON.stringify({ username, password }) });
+export async function loginWithPassword(username: string, password: string, turnstileToken = "") {
+    const query = turnstileToken ? `?turnstile=${encodeURIComponent(turnstileToken)}` : "";
+    const response = await gatewayFetch(`/api/user/login${query}`, { method: "POST", body: JSON.stringify({ username, password }) });
     const data = await readEnvelope<AuthBundle>(response, "authLoginFailed");
     if (data.require_2fa) throw new Error(apiText("auth2FAUnsupported"));
     useAuthStore.getState().applyBundle(data);
     await setupGatewayChannels(window.location.origin);
+}
+
+/** Public gateway status; exposes whether login needs a Turnstile token. */
+export async function fetchGatewayStatus() {
+    const response = await gatewayFetch("/api/status");
+    if (!response.ok) throw new Error(apiText("authRequestFailed"));
+    const payload = (await response.json().catch(() => null)) as Envelope<{ turnstile_check?: boolean; turnstile_site_key?: string }> | null;
+    return payload?.data || {};
 }
 
 /** Create or reuse the dedicated API token, then wire the napi channels with it. */

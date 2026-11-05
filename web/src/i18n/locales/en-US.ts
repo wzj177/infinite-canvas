@@ -342,6 +342,7 @@ export default {
         loginSuccess: "Signed in",
         loginFailed: "Sign-in failed",
         formIncomplete: "Enter your username and password",
+        turnstileRequired: "Complete the human verification first",
         authorizedUser: "Authorized user",
     },
     topNav: {
