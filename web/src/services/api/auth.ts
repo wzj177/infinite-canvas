@@ -88,7 +88,9 @@ async function setupGatewayChannels(baseUrl: string) {
     try {
         const apiKey = await ensureGatewayApiKey();
         await ensureNapiChannels(apiKey, baseUrl);
-        setChannelWarning("");
+        const channels = useConfigStore.getState().config.channels;
+        const videoReady = channels.find((channel) => channel.name === "napi 视频")?.models.some((model) => model.capability === "video");
+        setChannelWarning(videoReady ? "" : i18n.t("apiErrors.napiVideoModelsMissing"));
     } catch (error) {
         setChannelWarning(error instanceof Error ? error.message : apiText("authRequestFailed"));
     }
@@ -109,8 +111,10 @@ async function ensureNapiChannels(apiKey: string, baseUrl: string) {
         const channel = createModelChannel({ ...(existing || {}), name: target.name, baseUrl, apiKey, apiFormat: target.apiFormat });
         if (index >= 0) channels[index] = channel;
         else channels.push(channel);
-        // Keep a user-customized model list; only first-time channels pull models automatically.
-        if (!existing?.models.length) toFetch.push(channel);
+        // Keep a user-customized model list, but re-pull while the channel lacks models of its own kind
+        // (e.g. the gateway token group did not expose them yet).
+        const capability = target.apiFormat === "video-seedance" ? "video" : "image";
+        if (!existing?.models.some((model) => model.capability === capability)) toFetch.push(channel);
     }
     useConfigStore.setState({ config: { ...config, channels, models: modelOptionsFromChannels(channels) } });
     await Promise.allSettled(

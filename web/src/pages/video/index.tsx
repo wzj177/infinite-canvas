@@ -108,6 +108,7 @@ export default function VideoPage() {
 
     const model = effectiveConfig.videoModel || effectiveConfig.model;
     const canGenerate = Boolean(prompt.trim());
+    const modelReady = isAiConfigReady(effectiveConfig, model);
 
     useEffect(() => {
         if (!running || !startedAt) return;
@@ -485,6 +486,15 @@ export default function VideoPage() {
                                 <GenerationSettings config={effectiveConfig} model={model} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
                             </div>
                         </div>
+
+                        {!modelReady ? (
+                            <div className="mt-4 flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+                                <span className="min-w-0">{t("videoWorkbench.modelNotReady")}</span>
+                                <Button size="small" onClick={() => openConfigDialog(false)}>
+                                    {t("navigation.config")}
+                                </Button>
+                            </div>
+                        ) : null}
 
                         <div className="mt-auto pt-6">
                             <Button type="primary" size="large" block icon={<Sparkles className="size-4" />} loading={running} disabled={!canGenerate || running} onClick={() => void generate()}>
